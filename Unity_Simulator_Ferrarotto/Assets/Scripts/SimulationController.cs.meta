@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: c0f55c4a058e10e4d8aa66a5609e487d
+timeCreated: 1486141000
+licenseType: Free
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences:
+  - vehiclePrefab: {fileID: 1717079613676274, guid: 80718ec6fab796a40a74105d40a7b737,
+      type: 2}
+  - requestPrefab: {fileID: 1112138627902376, guid: 0772ffd5c6315694dba52a0511f5ff61,
+      type: 2}
+  - requestGridPrefab: {fileID: 1259685777126014, guid: 26af6129f0f1b504a8b35efc8e81bb95,
+      type: 2}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
