@@ -87,6 +87,7 @@ public class Request : MonoBehaviour {
                 {
                     renderer.enabled = true;
                     renderer.gameObject.transform.position = destination;
+                    //renderer.gameObject.transform.Translate(0, 12, 0);
                 }
                 else
                 {

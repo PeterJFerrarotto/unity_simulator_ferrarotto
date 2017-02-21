@@ -10,6 +10,12 @@ public class Vehicle : MonoBehaviour {
     public static float unitSize;
     private static int radiusToUnitSize = 12;
 
+    private static float spritePersistTime = 5;
+
+    private float spriteExistTime;
+
+    private float searchTime;
+
     public static float timeRadius;
     public static float minimumScore;
     public static float tripDistanceWeight;
@@ -17,6 +23,7 @@ public class Vehicle : MonoBehaviour {
     public static float maximumSearchRadius;
     public static float customSearchRadiusStep;
     public static float maximumDestinationRequestCount;
+    public static float spritePersistance;
 
     public int requestsCompleted;
     public float distanceTravelledWithPassenger;
@@ -44,18 +51,24 @@ public class Vehicle : MonoBehaviour {
         collidedRequestsRadius2 = new List<Request>();
         collidedRequestsRadius3 = new List<Request>();
         currentTime = 0;
+        searchTime = 0;
+        spriteExistTime = 0;
         previousLocation = startingPosition;
         foreach(SpriteRenderer renderer in gameObject.GetComponentsInChildren<SpriteRenderer>())
         {
             renderer.enabled = renderer.gameObject.tag == "Vehicle";
         }
+        distanceTravelledWithoutPassenger = 0;
+        distanceTravelledWithPassenger = 0;
+        requestsCompleted = 0;
+        spriteExistTime = 0;
 	}
 	
 	// Update is called once per frame
 	void Update () {
         foreach(SpriteRenderer sprite in gameObject.GetComponentsInChildren<SpriteRenderer>())
         {
-            if(sprite.gameObject.tag == "Thinking_Sprite" || sprite.gameObject.tag == "Waiting_Sprite")
+            if(sprite.gameObject.tag == "Thinking_Sprite" || sprite.gameObject.tag == "Waiting_Sprite" || sprite.gameObject.tag == "Match_Success_Sprite" || sprite.gameObject.tag == "Match_Failure_Sprite")
             {
                 sprite.gameObject.transform.localPosition = new Vector3(9 * Mathf.Sin(gameObject.transform.eulerAngles.z * Mathf.Deg2Rad), 16 * Mathf.Cos(gameObject.transform.eulerAngles.z * Mathf.Deg2Rad));
                 sprite.gameObject.transform.rotation = Quaternion.identity;
@@ -68,14 +81,16 @@ public class Vehicle : MonoBehaviour {
             case VEHICLE_STATE.VEHICLE_SCANNING_REQUESTS:
                 foreach (SpriteRenderer sprite in gameObject.GetComponentsInChildren<SpriteRenderer>())
                 {
-                    sprite.enabled = sprite.gameObject.tag == "Thinking_Sprite" || sprite.gameObject.tag == "Vehicle";
+                    sprite.enabled = (sprite.gameObject.tag == "Thinking_Sprite" && spriteExistTime >= spritePersistTime) || (sprite.gameObject.tag == "Match_Failure_Sprite" && spriteExistTime < spritePersistTime) || sprite.gameObject.tag == "Vehicle";
                 }
                 ScanRequests();
+                searchTime += GameObject.FindGameObjectWithTag("Simulation_Controller").GetComponent<SimulationController>().timeStep;
                 break;
             case VEHICLE_STATE.VEHICLE_GOING_TO_PICKUP:
                 foreach (SpriteRenderer renderer in gameObject.GetComponentsInChildren<SpriteRenderer>())
                 {
-                    renderer.enabled = renderer.gameObject.tag == "Vehicle";
+                    renderer.enabled = renderer.gameObject.tag == "Vehicle" || (renderer.gameObject.tag == "Match_Success_Sprite" && spriteExistTime < spritePersistTime);
+                    spriteExistTime += Time.deltaTime;
                 }
                 if (gameObject.transform.position == currentDestination)
                 {
@@ -137,6 +152,50 @@ public class Vehicle : MonoBehaviour {
                     gameObject.transform.position = Vector3.Lerp(previousLocation, currentDestination, currentTime/timeProjectedToArriveAtDestination);
                 }
                 break;
+            case VEHICLE_STATE.VEHICLE_SCANNING_DEMAND:
+                foreach (SpriteRenderer sprite in gameObject.GetComponentsInChildren<SpriteRenderer>())
+                {
+                    sprite.enabled = (sprite.gameObject.tag == "Thinking_Sprite" && spriteExistTime >= spritePersistTime) || (sprite.gameObject.tag == "Match_Failure_Sprite" && spriteExistTime < spritePersistTime) || sprite.gameObject.tag == "Vehicle";
+                    spriteExistTime += Time.deltaTime;
+                }
+                if (ScanDemandZones())
+                {
+                    state = VEHICLE_STATE.VEHICLE_GOING_TO_DEMAND_ZONE;
+                    spriteExistTime = 0;
+                }
+                else
+                {
+                    if (searchTime >= timeRadius)
+                    {
+                        StartScanningRequests();
+                    }
+                    else
+                    {
+                        searchTime += GameObject.FindGameObjectWithTag("Simulation_Controller").GetComponent<SimulationController>().timeStep;
+                    }
+                }
+                break;
+            case VEHICLE_STATE.VEHICLE_GOING_TO_DEMAND_ZONE:
+                foreach (SpriteRenderer renderer in gameObject.GetComponentsInChildren<SpriteRenderer>())
+                {
+                    renderer.enabled = renderer.gameObject.tag == "Vehicle";
+                }
+                if (gameObject.transform.position == currentDestination)
+                {
+                    StartScanningRequests();
+                }
+                else
+                {
+                    Vector3 vectorToTarget = currentDestination - transform.position;
+                    // 4
+                    vectorToTarget.z = 0;
+                    vectorToTarget.Normalize();
+                    float targetAngle = Mathf.Atan2(vectorToTarget.y, vectorToTarget.x) * Mathf.Rad2Deg;
+                    targetAngle -= 90;
+                    transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.Euler(0, 0, targetAngle), 1.0f);
+                    gameObject.transform.position = Vector3.Lerp(previousLocation, currentDestination, currentTime / timeProjectedToArriveAtDestination);
+                }
+                break;
             default:
                 state = VEHICLE_STATE.VEHICLE_SCANNING_REQUESTS;
                 break;
@@ -159,14 +218,14 @@ public class Vehicle : MonoBehaviour {
                 else
                 {
                     float dist = Vector2.Distance(gameObject.transform.position, other.gameObject.transform.position);
-                    if (dist >= minimumSearchRadius * radiusToUnitSize && dist < minimumSearchRadius * radiusToUnitSize + radiusToUnitSize * customSearchRadiusStep)
+                    if (dist >= 0 && dist < minimumSearchRadius * radiusToUnitSize)
                     {
                         if (!collidedRequestsRadius1.Contains(other.gameObject.GetComponent<Request>()))
                         {
                             collidedRequestsRadius1.Add(other.gameObject.GetComponent<Request>());
                         }
                     }
-                    else if (dist >= minimumSearchRadius * radiusToUnitSize + radiusToUnitSize * customSearchRadiusStep && dist < maximumSearchRadius * radiusToUnitSize)
+                    else if (dist >= minimumSearchRadius * radiusToUnitSize && dist < minimumSearchRadius * radiusToUnitSize + customSearchRadiusStep * radiusToUnitSize)
                     {
                         if (!collidedRequestsRadius2.Contains(other.gameObject.GetComponent<Request>()))
                         {
@@ -207,13 +266,12 @@ public class Vehicle : MonoBehaviour {
     private float ScoreRequest(Request request)
     {
         request.beingEvaled = true;
-        float currentTime = Time.time;
         float score = 0.0f;
         float lenToRequest = Vector3.Distance(gameObject.transform.position, request.requestLocation);
         float percentUtilization = (request.tripLength / (request.tripLength + lenToRequest)) * 10;
         float requestLengthValue = request.tripLength * tripDistanceWeight * 10;
 
-        if(request.requestTime + timeRadius < (lenToRequest * unitSize) / speed)
+        if(request.requestTime + timeRadius < currentTime + (lenToRequest * unitSize) / 0.00833333f)
         {
             return -1;
         }
@@ -227,6 +285,45 @@ public class Vehicle : MonoBehaviour {
 
         score = percentUtilization + requestLengthValue - destinationPenalty;
         return score * 10;
+    }
+
+    private bool ScanDemandZones()
+    {
+        int highestDemand = 0;
+        Vector2 highestDemandLocation = new Vector2(-1, -1);
+        int staleCount = 0;
+        for (float xDeg = 0; xDeg < 2 * Mathf.PI; xDeg += Mathf.PI / 6) {
+            float xPos = gameObject.transform.position.x + minimumSearchRadius * Mathf.Cos(xDeg);
+            for(float yDeg = 0; yDeg < 2 * Mathf.PI; yDeg += Mathf.PI / 6)
+            {
+                float yPos = gameObject.transform.position.y + minimumSearchRadius * Mathf.Sin(yDeg);
+                int demandAtLocation = requestGrid.getDemandAtLocation(new Vector2(xPos, yPos), currentTime);
+                if (demandAtLocation > highestDemand)
+                {
+                    highestDemand = demandAtLocation;
+                    highestDemandLocation = new Vector2(xPos, yPos);
+                    staleCount = 0;
+                }
+                else if (demandAtLocation <= highestDemand)
+                {
+                    if(highestDemandLocation.x != -1 && highestDemandLocation.y != -1)
+                    {
+                        staleCount++;
+                    }
+                }
+
+                if(staleCount >= 3)
+                {
+                    return false;
+                }
+            }
+        }
+        if(highestDemandLocation.x != -1 && highestDemandLocation.y != 1)
+        {
+            currentDestination = highestDemandLocation;
+            return true;
+        }
+        return false;
     }
 
     private void ScanRequestsFirstRadius()
@@ -335,15 +432,19 @@ public class Vehicle : MonoBehaviour {
         }
         if(highestScoringRequest == null)
         {
-            StartScanningDemand();
+            if (searchTime >= timeRadius)
+            {
+                StartScanningDemand();
+            }
         }
         else
         {
             currentRequest = highestScoringRequest;
             state = VEHICLE_STATE.VEHICLE_GOING_TO_PICKUP;
+            spriteExistTime = 0;
             currentDestination = currentRequest.requestLocation;
             currentRequest.matchedToVehicle = true;
-            timeProjectedToArriveAtDestination = currentTime + (Vector3.Distance(gameObject.transform.position, currentDestination) * unitSize) / 30;
+            timeProjectedToArriveAtDestination = currentTime + (Vector3.Distance(gameObject.transform.position, currentDestination) * unitSize) / 0.00833333f;
             foreach (SpriteRenderer sprite in gameObject.GetComponentsInChildren<SpriteRenderer>())
             {
                 sprite.enabled = sprite.gameObject.tag == "Vehicle";
@@ -354,6 +455,7 @@ public class Vehicle : MonoBehaviour {
     private void StartScanningRequests()
     {
         state = VEHICLE_STATE.VEHICLE_SCANNING_REQUESTS;
+        searchTime = 0;
         highestScore = minimumScore;
         highestScoringRequest = null;
         currentRequest = null;
@@ -361,6 +463,8 @@ public class Vehicle : MonoBehaviour {
 
     private void StartScanningDemand()
     {
+        searchTime = 0;
+        spriteExistTime = 0;
         state = VEHICLE_STATE.VEHICLE_SCANNING_DEMAND;
     }
 
@@ -370,6 +474,7 @@ public class Vehicle : MonoBehaviour {
         previousLocation = currentRequest.destination;
         currentDestination = currentRequest.destination;
         currentRequest.droppedOff = true;
+        requestsCompleted++;
         //currentRequest = null;
         StartScanningRequests();
     }
@@ -381,7 +486,7 @@ public class Vehicle : MonoBehaviour {
         state = VEHICLE_STATE.VEHICLE_GOING_TO_DESTINATION;
         distanceTravelledWithoutPassenger += Vector2.Distance(previousLocation, currentDestination);
         currentDestination = currentRequest.destination;
-        timeProjectedToArriveAtDestination = currentTime + (currentRequest.tripLength * unitSize)/30;
+        timeProjectedToArriveAtDestination = currentTime + (currentRequest.tripLength * unitSize)/ 0.00833333f;
         previousLocation = gameObject.transform.position;
     }
 }
